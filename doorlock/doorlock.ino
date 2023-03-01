@@ -7,7 +7,7 @@
 #define MAX_PASSWORD_ATTEMPTS 3  // Số lần nhập sai mật khẩu tối đa
 
 
-const int relay_pin = 10
+const int relay_pin = 10;
 const byte ROWS = 4;
 const byte COLS = 4;
 
