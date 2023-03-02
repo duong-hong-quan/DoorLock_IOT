@@ -1,11 +1,9 @@
 #include <Keypad.h>
 #include <Servo.h>  // Thêm thư viện servo motor
-#include <Wire.h>
+#include <Adafruit_Fingerprint.h>
 #include <LiquidCrystal_I2C.h>
 
-LiquidCrystal_I2C lcd(0x27, 16, 2);
-#define ledRedPin 4
-#define ledGreenPin 5
+
 const byte ROWS = 4;  // số hàng
 const byte COLS = 4;  // số cột
 
@@ -13,9 +11,14 @@ const byte COLS = 4;  // số cột
 
 // Khai báo đối tượng servo
 Servo myServo;
+SoftwareSerial mySerial(2, 3);
+Adafruit_Fingerprint finger = Adafruit_Fingerprint(&mySerial);
+LiquidCrystal_I2C lcd(0x27, 16, 2);  // Địa chỉ LCD 0x27, 16 cột, 2 hàng
 
 // Khai báo chân của servo motor
 const int servoPin = 5;
+int switchPin = 4;  // Chân của côn  g tắc
+
 
 // Khai báo các ký tự của keypad 4x4
 char keys[ROWS][COLS] = {
@@ -38,25 +41,39 @@ const char passcode[4] = { '1', '2', '3', '4' };
 void setup() {
   Serial.begin(9600);  // khởi tạo Serial
   myServo.attach(servoPin);
+  pinMode(switchPin, INPUT_PULLUP);  // Thiết lập chân của công tắc là INPUT_PULLUP
   lcd.init();
   lcd.backlight();
   lcd.setCursor(0, 0);
-  lcd.print("Input pass");
-  delay(3000);
+  lcd.print("Input pass or ");
+  lcd.setCursor(0, 1);
+  lcd.print("fingerprint ");
+  delay(10000);
   lcd.clear();
+
+  while (!Serial)
+    ;
+  finger.begin(57600);
+  if (finger.verifyPassword()) {
+    Serial.println("Found fingerprint sensor!");
+  } else {
+    Serial.println("Did not find fingerprint sensor :(");
+    while (1) { delay(1); }
+  }
 }
 
 void loop() {
-
   enterPassword();
+  getFingerprintIDez();
+  delay(50);  //don't ned to run this at full speed.
+  isSwitchPressed();
+ 
 }
-bool enterPassword() {
-
+void enterPassword() {
   char key = keypad.getKey();  // đọc giá trị từ keypad
 
   if (key) {
     Serial.print(key);  // hiển thị giá trị đọc được trên Serial Monitor
-
     // Kiểm tra nếu người dùng nhập chuỗi "*ad" thì cho phép đổi mật khẩu
     if (key == '*') {
       char buffer[3];
@@ -70,7 +87,7 @@ bool enterPassword() {
       }
       if (buffer[0] == 'A' && buffer[1] == 'D') {  // nếu chuỗi "*ad" được nhập
         changePassword();
-        return true;
+        return;
       }
     }
 
@@ -85,52 +102,108 @@ bool enterPassword() {
         inputPassword += tempKey;                    // thêm ký tự đó vào chuỗi mật khẩu
         if (inputPassword.indexOf(passcode) >= 0) {  // nếu chuỗi nhập vào chứa mật khẩu
           unlockDoor();
-          Serial.println(" - Unlocked");  // hiển thị thông báo trên Serial Monitor
-          delay(5000);                    // chờ 5 giây
-          lockDoor();
-        return true;
+          Serial.println("Door is unlocked");
+          lcd.clear();
+          lcd.print("Door is unlocked");
 
-          // break;  // thoát khỏi vòng lặp khi đã mở khóa thành công
+          lockDoor();
+          Serial.println("Door is locked");
+
+          lcd.clear();
+          lcd.print("Door is locked");
+          break;  // thoát khỏi vòng lặp khi đã mở khóa thành công
         }
       }
     }
 
     // Nếu nhập sai mật khẩu sau 10 ký tự được nhập
-    lockDoor();
-    Serial.println(" - Incorrect passcode");  // hiển thị thông báo trên Serial Monitor
-    return false;
+    Serial.println("Incorrect passcode");  // hiển thị thông báo trên Serial Monitor
+   
   }
 }
-
 void changePassword() {
+  lcd.clear();
+  lcd.print("Enter new pass");
   Serial.println("Enter new passcode:");  // yêu cầu người dùng nhập mật khẩu mới
-  
-  char newPasscode[4];  // khởi tạo mảng char chứa mật khẩu mới
+  char newPasscode[4];                    // khởi tạo mảng char chứa mật khẩu mới
   for (int i = 0; i < 4; i++) {
     newPasscode[i] = keypad.waitForKey();  // đọc lần lượt từng ký tự của mật khẩu mới
     Serial.print(newPasscode[i]);          // hiển thị ký tự đó trên Serial Monitor
   }
-  memcpy(passcode, newPasscode, 4);       // sao chép mật khẩu mới vào mảng passcode
+  memcpy(passcode, newPasscode, 4);  // sao chép mật khẩu mới vào mảng passcode
+  lcd.clear();
+  lcd.print("Passcode changed");
+
   Serial.println(" - Passcode changed");  // thông báo mật khẩu đã được thay đổi trên Serial Monitor
+  delay(2000);
+  lcd.clear();
 }
 
 void unlockDoor() {
-  digitalWrite(ledRedPin, LOW);
-  digitalWrite(ledGreenPin, HIGH);
-  myServo.write(0);  // Quay servo motor ở góc 90 độ
-  lcd.print("Door unlocked!");
 
-  delay(2000);  // Dừng 1 giây
-  lcd.clear();
+
+  myServo.write(0);  // Quay servo motor ở góc 90 độ
+  delay(1000);       // Dừng 1 giây
 }
 
 // Hàm  khóa cửa bằng cách quay servo motor
 void lockDoor() {
-  digitalWrite(ledRedPin, HIGH);
-  digitalWrite(ledGreenPin, LOW);
-  myServo.write(90);  // Quay servo motor về góc 90 độ
-  lcd.print("Door locked!");
 
-  delay(500);  // Dừng 1 giây
+
+  delay(1000);        // Dừng 1 giây
+  myServo.write(90);  // Quay servo motor về góc 90 độ
+}
+
+// returns -1 if failed, otherwise returns ID #
+int getFingerprintIDez() {
+  uint8_t p = finger.getImage();
+  if (p != FINGERPRINT_OK) {
+
+    return -1;
+  }
+
+  p = finger.image2Tz();
+  if (p != FINGERPRINT_OK) {
+
+    return -1;
+  }
+
+  p = finger.fingerFastSearch();
+  if (p != FINGERPRINT_OK) {
+   
+    return -1;
+  }
+
+  // found a match!
+ 
+  Serial.print("Found ID #");
+  Serial.println(finger.fingerID);
+  unlockDoor();
+  Serial.println("Door is unlocked");
   lcd.clear();
+  lcd.print("Door is unlocked");
+
+  lockDoor();
+  Serial.println("Door is locked");
+
+  lcd.clear();
+  lcd.print("Door is locked");
+  return finger.fingerID;
+}
+void isSwitchPressed() {
+  bool currentState = digitalRead(switchPin);
+  delay(200);  // tạm dừng 50ms để đảm bảo chắc chắn đọc được giá trị của nút
+  bool isPressed = currentState == LOW && digitalRead(switchPin) == LOW;
+  if (isPressed) {
+    unlockDoor();
+    Serial.println("Door is unlocked");
+    lcd.clear();
+    lcd.print("Door is unlocked");
+
+    lockDoor();
+    Serial.println("Door is locked");
+
+    lcd.clear();
+    lcd.print("Door is locked");
+  }
 }
